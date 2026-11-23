@@ -1,0 +1,14 @@
+[
+  {
+    "name": "JS loader (ESM, minified and brotlied)",
+    "path": "dist/index.js",
+    "limit": "2 kB"
+  },
+  {
+    "name": "libdeflate.wasm (gzipped)",
+    "path": "dist/libdeflate.wasm",
+    "limit": "31 kB",
+    "rolldown": false,
+    "gzip": true
+  }
+]

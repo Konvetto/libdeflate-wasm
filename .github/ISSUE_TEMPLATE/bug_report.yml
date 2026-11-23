@@ -1,0 +1,32 @@
+name: Bug report
+description: Something produces a wrong, broken or surprising result
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected and what you got. Attach the input file if you can (or a link).
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal code
+      description: The call (`zlib(data, 12)`, ...) and the input that shows it.
+      render: ts
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: libdeflate-wasm version
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Runtime
+      description: Node, Deno, Bun or browser, with version.
+    validations:
+      required: true

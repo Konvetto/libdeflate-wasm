@@ -1,0 +1,85 @@
+{
+  "name": "libdeflate-wasm",
+  "version": "0.1.0",
+  "description": "libdeflate compiled to WebAssembly: DEFLATE, zlib and gzip at levels 0 to 12, smaller than zlib level 9 and synchronous after one init. Zero dependencies, browsers, Web Workers and Node.",
+  "keywords": [
+    "libdeflate",
+    "deflate",
+    "zlib",
+    "gzip",
+    "inflate",
+    "compression",
+    "wasm",
+    "webassembly",
+    "pdf",
+    "flate",
+    "browser",
+    "worker"
+  ],
+  "homepage": "https://konvetto.com/pdf/compress-pdf",
+  "bugs": {
+    "url": "https://github.com/Konvetto/libdeflate-wasm/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Konvetto/libdeflate-wasm.git"
+  },
+  "license": "MIT",
+  "author": "Konvetto (https://konvetto.com)",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./libdeflate.wasm": "./dist/libdeflate.wasm",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=20.16"
+  },
+  "packageManager": "pnpm@12.21.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:wasm": "./scripts/build-wasm.sh",
+    "vendor:verify": "./scripts/fetch-libdeflate.sh --verify",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "size": "size-limit",
+    "publint": "publint --strict",
+    "attw": "attw --pack . --profile esm-only --exclude-entrypoints libdeflate.wasm",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm publint && pnpm attw && pnpm size",
+    "bench": "tsx bench/run.ts",
+    "prepublishOnly": "pnpm check"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@size-limit/preset-small-lib": "14.3.0",
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.1.0",
+    "eslint": "10.15.0",
+    "fflate": "0.8.3",
+    "prettier": "3.10.1",
+    "publint": "0.3.25",
+    "size-limit": "14.3.0",
+    "tsup": "8.5.1",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  }
+}

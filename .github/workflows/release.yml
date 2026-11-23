@@ -1,0 +1,66 @@
+name: Release
+
+# release-please keeps a release PR open on main (version bump + CHANGELOG from Conventional
+# Commits). Merging that PR creates the tag and the GitHub release, and the publish job below
+# then pushes to npm with provenance.
+# npm trusted publishing (OIDC, no token): libdeflate-wasm on npmjs.com trusts this repository, this
+# workflow file and the `npm` environment, so the publish job must stay here. A version already
+# on npm is not published again.
+on:
+  push:
+    branches: [main]
+  # Retry the npm publish of the version in package.json (e.g. after a failed publish job).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5.0.0
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # Optional PAT: PRs made with GITHUB_TOKEN do not trigger CI, a PAT does.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Publish unless this version is already on npm
+        run: |
+          if npm view "libdeflate-wasm@$(node -p "require('./package.json').version")" version >/dev/null 2>&1; then
+            echo "Already on npm, skipping publish"
+          else
+            npm publish --provenance --access public
+          fi
