@@ -9,7 +9,9 @@ import {
 import { beforeAll, describe, expect, test } from 'vitest';
 import {
   DEFAULT_LEVEL,
+  MAX_INPUT,
   MAX_LEVEL,
+  MAX_OUTPUT,
   deflate,
   gunzip,
   gzip,
@@ -20,7 +22,7 @@ import {
   unzlib,
   zlib,
 } from '../src/index.js';
-import { hasNative, nativeGzip, randomBytes, realData, text } from './helpers.js';
+import { VENDORED_VERSION, hasNative, nativeGzip, randomBytes, realData, text } from './helpers.js';
 
 const levels = Array.from({ length: MAX_LEVEL + 1 }, (_, i) => i);
 const inputs: [string, Uint8Array][] = [
@@ -31,6 +33,12 @@ const inputs: [string, Uint8Array][] = [
   ['real C sources', realData()],
   ['zeros 2 MB', new Uint8Array(2_000_000)],
 ];
+
+// Never pass silently: without the reference binary this shows as skipped, with the reason.
+if (!hasNative) {
+  test.skip(`native libdeflate-gzip ${VENDORED_VERSION} not found (run ./scripts/build-native-gzip.sh or set LIBDEFLATE_GZIP): byte-for-byte checks skipped`, () =>
+    undefined);
+}
 
 beforeAll(async () => {
   await init();
@@ -51,7 +59,7 @@ describe.each(inputs)('%s', (_, data) => {
   });
 
   // The libdeflate-gzip CLI has no -0, so level 0 is checked as stored blocks below.
-  test.runIf(hasNative).each(levels.slice(1))(
+  test.skipIf(!hasNative).each(levels.slice(1))(
     'equals native libdeflate byte for byte at level %i',
     (level) => {
       expect(gzip(data, level)).toEqual(nativeGzip(data, level));
@@ -160,5 +168,30 @@ test('compresses 50 MB without trouble', () => {
     expect(new Uint8Array(inflateSync(z))).toEqual(data);
     expect(unzlib(z, data.length)).toEqual(data);
   }
-  if (hasNative) expect(gzip(data, 12)).toEqual(nativeGzip(data, 12));
+});
+
+test.skipIf(!hasNative)('50 MB at level 12 equals native libdeflate byte for byte', () => {
+  const data = new Uint8Array(50 * 1024 * 1024);
+  const chunk = text(1 << 20);
+  for (let i = 0; i < 50; i++) data.set(i % 5 === 4 ? randomBytes(1 << 20, i + 1) : chunk, i << 20);
+  expect(gzip(data, 12)).toEqual(nativeGzip(data, 12));
+});
+
+test('decompressors stop after the first stream and ignore trailing bytes', () => {
+  const a = text(5_000);
+  const b = randomBytes(3_000);
+  const extra = new Uint8Array([0x0d, 0x0a, 0xff, 0x00]);
+  expect(unzlib(new Uint8Array([...zlib(a, 6), ...extra]))).toEqual(a);
+  expect(inflate(new Uint8Array([...deflate(a, 6), ...extra]))).toEqual(a);
+  // Two gzip members: only the first comes back (node:zlib would return both).
+  expect(gunzip(new Uint8Array([...gzip(a, 6), ...gzip(b, 6)]))).toEqual(a);
+});
+
+test('size above MAX_OUTPUT and input above MAX_INPUT are rejected up front', () => {
+  expect(() => unzlib(zlib(new Uint8Array(10)), MAX_OUTPUT + 1)).toThrow(
+    `size must be at most ${MAX_OUTPUT} bytes`,
+  );
+  const huge = new Uint8Array(MAX_INPUT + 1); // zero pages, not touched before the check
+  expect(() => zlib(huge, 1)).toThrow(/input is larger than/);
+  expect(() => unzlib(huge)).toThrow(/input is larger than/);
 });

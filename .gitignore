@@ -4,3 +4,4 @@ coverage/
 bench/out/
 *.tgz
 .DS_Store
+CLAUDE.local.md

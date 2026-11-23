@@ -46,6 +46,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build the native reference compressor from vendor/ (byte-for-byte tests)
+        run: ./scripts/build-native-gzip.sh
       - run: pnpm test:coverage
       - name: Smoke-test the built package in plain Node
         run: |
@@ -60,13 +62,28 @@ jobs:
           "
 
   wasm:
-    name: Rebuild wasm from vendor
+    # Checks that vendor/ is the pinned libdeflate release and rebuilds the wasm with emsdk 7.0.1.
+    # The committed file is built with Homebrew's Emscripten 7.0.1 on macOS; a Linux emsdk build
+    # of the same version may differ in bytes (different LLVM build), so a mismatch is reported
+    # as a warning, not a failure. Output equality with native libdeflate is what the tests pin.
+    name: Verify vendor and rebuild wasm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: vendor/libdeflate matches the pinned release tarball (SHA-256)
+        run: ./scripts/fetch-libdeflate.sh --verify
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 7.0.1
-      - run: ./scripts/build-wasm.sh
-      - name: The committed wasm matches the vendored source
-        run: git diff --exit-code --stat src/libdeflate.wasm
+          actions-cache-folder: emsdk-cache
+      - run: emcc --version
+      - name: Rebuild and compare with the committed wasm
+        run: |
+          OUT="$RUNNER_TEMP/libdeflate.wasm" ./scripts/build-wasm.sh
+          committed=$(sha256sum src/libdeflate.wasm | cut -d' ' -f1)
+          rebuilt=$(sha256sum "$RUNNER_TEMP/libdeflate.wasm" | cut -d' ' -f1)
+          echo "committed $committed"
+          echo "rebuilt   $rebuilt"
+          if [ "$committed" != "$rebuilt" ]; then
+            echo "::warning title=wasm differs::The emsdk 7.0.1 rebuild differs from src/libdeflate.wasm ($rebuilt vs $committed). See CONTRIBUTING.md."
+          fi

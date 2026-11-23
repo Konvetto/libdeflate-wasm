@@ -13,15 +13,20 @@ pnpm bench -- a.pdf b.pdf
 ```
 
 Node 20.16 or newer and pnpm (see `packageManager` in package.json). The byte-for-byte tests use
-`libdeflate-gzip` 1.26 (`brew install libdeflate`, or set `LIBDEFLATE_GZIP`); without it they
-are skipped.
+`libdeflate-gzip` 1.26 or the reference built by `./scripts/build-native-gzip.sh` (or set
+`LIBDEFLATE_GZIP`); without either they show as skipped. `LIBDEFLATE_WASM_LARGE=1 pnpm test`
+adds a slow test that pushes wasm memory past 2 GiB (needs about 4 GB of RAM).
 
 ## The wasm
 
 - `vendor/libdeflate` is libdeflate's release tarball, unmodified. Never edit it by hand: change
   `VERSION` and `SHA256` in `scripts/fetch-libdeflate.sh` and run it.
 - `src/libdeflate.wasm` is built by `pnpm build:wasm` (Emscripten 7.0.1) and committed. Commit the
-  rebuilt file together with the change that caused it; CI rebuilds it and fails on a difference.
+  rebuilt file together with the change that caused it. CI verifies `vendor/` and rebuilds the
+  wasm with emsdk 7.0.1 on Linux; a byte difference from the macOS build is only a warning.
+- The byte-for-byte tests need native libdeflate of the vendored version: `libdeflate-gzip`
+  1.26, or `./scripts/build-native-gzip.sh` (any C compiler; CI does this). Without it they show
+  as skipped with the reason.
 - A libdeflate upgrade needs the native `libdeflate-gzip` of the same version for the tests, a
   benchmark run and a CHANGELOG line about the size change.
 
@@ -35,8 +40,8 @@ are skipped.
 
 ## Pull requests
 
-CI runs lint, types, tests on Node 20, 22 and 24, publint, arethetypeswrong, size-limit and a
-rebuild of the wasm. Use a Conventional Commit title for the PR (it becomes the squash commit):
+CI runs lint, types, tests on Node 20, 22 and 24, publint, arethetypeswrong, size-limit, the
+vendor check and a rebuild of the wasm. Use a Conventional Commit title for the PR (it becomes the squash commit):
 do not edit CHANGELOG.md by hand, the release PR generates it.
 
 ## Commits and releases

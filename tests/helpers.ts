@@ -2,13 +2,33 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
-export const NATIVE_GZIP = process.env.LIBDEFLATE_GZIP ?? '/opt/homebrew/bin/libdeflate-gzip';
-export const hasNative = existsSync(NATIVE_GZIP);
+/** The libdeflate version vendored and compiled into the wasm. */
+export const VENDORED_VERSION = '1.26';
+
+function findNative(): string | undefined {
+  const candidates = [
+    process.env.LIBDEFLATE_GZIP,
+    join(import.meta.dirname, '../bench/out/native-gzip'), // ./scripts/build-native-gzip.sh
+    '/opt/homebrew/bin/libdeflate-gzip',
+    '/usr/local/bin/libdeflate-gzip',
+    '/usr/bin/libdeflate-gzip',
+  ];
+  for (const path of candidates) {
+    if (!path || !existsSync(path)) continue;
+    const version = execFileSync(path, ['-V'], { encoding: 'utf8' });
+    if (version.includes(`v${VENDORED_VERSION}`)) return path;
+  }
+  return undefined;
+}
+
+/** A native gzip compressor of the vendored libdeflate version, or undefined. */
+export const NATIVE_GZIP = findNative();
+export const hasNative = NATIVE_GZIP !== undefined;
 
 /** `libdeflate-gzip -<level> -c`: the reference output for the same library version. */
 export function nativeGzip(data: Uint8Array, level: number): Uint8Array {
   return new Uint8Array(
-    execFileSync(NATIVE_GZIP, [`-${level}`, '-c'], { input: data, maxBuffer: 1 << 30 }),
+    execFileSync(NATIVE_GZIP!, [`-${level}`, '-c'], { input: data, maxBuffer: 1 << 30 }),
   );
 }
 

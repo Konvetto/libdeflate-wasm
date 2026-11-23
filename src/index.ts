@@ -39,8 +39,12 @@ export const DEFAULT_LEVEL = 12;
 
 const DECOMPRESS_SUCCESS = 0;
 const DECOMPRESS_INSUFFICIENT_SPACE = 3;
-/** Largest output `inflate` will grow to without a size hint (wasm32 address space). */
-const MAX_OUTPUT = 0x7fff0000;
+/** Largest input any function takes: 1 GiB. Compression needs about twice that in wasm memory. */
+export const MAX_INPUT = 0x40000000;
+/** Largest output the decompressors produce: 2 GiB minus 64 KiB. */
+export const MAX_OUTPUT = 0x7fff0000;
+/** DEFLATE expands at most about 1032:1, so no valid stream decodes to more than this. */
+const MAX_RATIO = 1032;
 
 let wasm: Exports | undefined;
 let pending: Promise<void> | undefined;
@@ -90,6 +94,8 @@ async function compile(source: WasmSource): Promise<WebAssembly.Module> {
 }
 
 function attach(module: WebAssembly.Module): void {
+  // The first instance wins: cached compressor pointers belong to it.
+  if (wasm) return;
   const instance = new WebAssembly.Instance(module, imports);
   const exports = instance.exports as unknown as Exports;
   exports._initialize();
@@ -103,6 +109,7 @@ function attach(module: WebAssembly.Module): void {
 export function init(source?: WasmSource): Promise<void> {
   if (wasm) return Promise.resolve();
   pending ??= compile(source ?? defaultUrl()).then(attach, (error: unknown) => {
+    if (wasm) return; // `initSync` won the race; this load is no longer needed
     pending = undefined;
     throw error;
   });
@@ -113,6 +120,8 @@ export function init(source?: WasmSource): Promise<void> {
 export function initSync(source: BufferSource | WebAssembly.Module): void {
   if (wasm) return;
   attach(source instanceof WebAssembly.Module ? source : new WebAssembly.Module(source));
+  // A later or still pending `init()` resolves without creating a second instance.
+  pending ??= Promise.resolve();
 }
 
 /** True once `init` or `initSync` has finished. */
@@ -126,8 +135,12 @@ function api(): Exports {
 }
 
 function checkInput(data: Uint8Array): void {
-  if (!(data instanceof Uint8Array))
+  if (!(data instanceof Uint8Array)) {
     throw new TypeError('libdeflate-wasm: data must be a Uint8Array');
+  }
+  if (data.length > MAX_INPUT) {
+    throw new RangeError(`libdeflate-wasm: input is larger than ${MAX_INPUT} bytes`);
+  }
 }
 
 function compressor(w: Exports, level: number): number {
@@ -136,7 +149,8 @@ function compressor(w: Exports, level: number): number {
   }
   let c = compressors.get(level);
   if (c === undefined) {
-    c = w.libdeflate_alloc_compressor(level);
+    // Pointers are unsigned: above 2 GiB an i32 result arrives in JS as a negative number.
+    c = w.libdeflate_alloc_compressor(level) >>> 0;
     if (!c) throw new RangeError('libdeflate-wasm: out of memory allocating the compressor');
     compressors.set(level, c);
   }
@@ -144,7 +158,7 @@ function compressor(w: Exports, level: number): number {
 }
 
 function alloc(w: Exports, n: number): number {
-  const p = w.malloc(Math.max(n, 1));
+  const p = w.malloc(Math.max(n, 1)) >>> 0;
   if (!p) throw new RangeError(`libdeflate-wasm: out of memory allocating ${n} bytes`);
   return p;
 }
@@ -191,19 +205,28 @@ function gzipSizeHint(data: Uint8Array): number | undefined {
 
 function decompress(format: Format, data: Uint8Array, size?: number): Uint8Array {
   checkInput(data);
-  if (size !== undefined && (!Number.isInteger(size) || size < 0 || size > MAX_OUTPUT)) {
+  if (size !== undefined && (!Number.isInteger(size) || size < 0)) {
     throw new RangeError('libdeflate-wasm: size must be a non-negative integer');
+  }
+  if (size !== undefined && size > MAX_OUTPUT) {
+    throw new RangeError(`libdeflate-wasm: size must be at most ${MAX_OUTPUT} bytes`);
   }
   const w = api();
   if (!decompressor) {
-    decompressor = w.libdeflate_alloc_decompressor();
+    decompressor = w.libdeflate_alloc_decompressor() >>> 0;
     if (!decompressor) throw new RangeError('libdeflate-wasm: out of memory');
   }
   const exact = size !== undefined;
-  let avail = size ?? (format === 'gzip' ? gzipSizeHint(data) : undefined) ?? data.length * 4;
-  avail = Math.min(Math.max(avail, 1024), MAX_OUTPUT);
-  const input = alloc(w, data.length + 4);
-  const actual = input + data.length; // 4 spare bytes after the input hold the output size
+  // Size hints (the caller's `size`, the gzip ISIZE trailer) are trusted only up to what the
+  // input can possibly decode to, so a 100-byte corrupt stream cannot reserve gigabytes.
+  const plausible = Math.min(data.length * MAX_RATIO + 1024, MAX_OUTPUT);
+  const limit = exact ? Math.min(size, plausible) : plausible;
+  const gzipHint = format === 'gzip' ? gzipSizeHint(data) : undefined;
+  const hint = size ?? (gzipHint !== undefined && gzipHint <= plausible ? gzipHint : undefined);
+  let avail = Math.min(Math.max(hint ?? data.length * 4, 1024), limit);
+  const actualAt = (data.length + 3) & ~3; // 4-byte slot after the input for the output length
+  const input = alloc(w, actualAt + 4);
+  const actual = input + actualAt;
   try {
     new Uint8Array(w.memory.buffer, input, data.length).set(data);
     for (;;) {
@@ -217,40 +240,45 @@ function decompress(format: Format, data: Uint8Array, size?: number): Uint8Array
             throw new Error(`libdeflate-wasm: expected ${size} bytes, got ${n}`);
           return new Uint8Array(w.memory.buffer, output, n).slice();
         }
-        if (status !== DECOMPRESS_INSUFFICIENT_SPACE || exact || avail >= MAX_OUTPUT) {
+        if (status !== DECOMPRESS_INSUFFICIENT_SPACE || avail >= limit) {
           throw new Error(
-            status === DECOMPRESS_INSUFFICIENT_SPACE
-              ? 'libdeflate-wasm: output larger than the given size'
-              : `libdeflate-wasm: invalid ${format} data`,
+            status !== DECOMPRESS_INSUFFICIENT_SPACE
+              ? `libdeflate-wasm: invalid ${format} data`
+              : exact
+                ? 'libdeflate-wasm: output larger than the given size'
+                : `libdeflate-wasm: output larger than ${limit} bytes`,
           );
         }
       } finally {
         w.free(output);
       }
-      avail = Math.min(avail * 2, MAX_OUTPUT);
+      avail = Math.min(avail * 2, limit);
     }
   } finally {
     w.free(input);
   }
 }
 
-/** Decompresses raw DEFLATE. Pass `size` when the exact output length is known (faster). */
+/**
+ * Decompresses raw DEFLATE. Pass `size` when the exact output length is known (faster).
+ * Decoding stops at the end of the first stream; bytes after it are ignored.
+ */
 export function inflate(data: Uint8Array, size?: number): Uint8Array {
   return decompress('deflate', data, size);
 }
 
-/** Decompresses a zlib stream. */
+/** Decompresses a zlib stream. Bytes after its Adler-32 are ignored (PDF streams often have an EOL). */
 export function unzlib(data: Uint8Array, size?: number): Uint8Array {
   return decompress('zlib', data, size);
 }
 
-/** Decompresses one gzip member. */
+/** Decompresses the first gzip member; further members and trailing bytes are ignored. */
 export function gunzip(data: Uint8Array, size?: number): Uint8Array {
   return decompress('gzip', data, size);
 }
 
 /**
- * Frees the cached compressors and decompressor (a level 12 compressor holds a few MB). wasm
+ * Frees the cached compressors and decompressor (levels 10 to 12 hold about 8.6 MB each). wasm
  * memory never shrinks, but freed space is reused by later calls.
  */
 export function release(): void {

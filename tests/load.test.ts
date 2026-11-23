@@ -67,3 +67,33 @@ test('a file: URL without node:fs gives a clear error', async () => {
   const m = await fresh();
   await expect(m.init(pathToFileURL(wasmPath))).rejects.toThrow(/without node:fs/);
 });
+
+test('init and initSync in the same tick share one instance', async () => {
+  const m = await fresh();
+  const data = new TextEncoder().encode('the quick brown fox '.repeat(5000));
+  const loading = m.init(bytes);
+  m.initSync(bytes);
+  const first = m.zlib(data, 12);
+  await loading;
+  await m.init();
+  expect(m.zlib(data, 12)).toEqual(first);
+  expect(first.length).toBeLessThan(1000);
+});
+
+test('initSync first, then init, does not load again', async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+  const m = await fresh();
+  m.initSync(bytes);
+  await m.init('https://cdn.example/libdeflate.wasm');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('a failing init after initSync succeeded does not reject', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('x', { status: 500 })));
+  const m = await fresh();
+  const loading = m.init('https://cdn.example/libdeflate.wasm');
+  m.initSync(bytes);
+  await expect(loading).resolves.toBeUndefined();
+  expect(m.isReady()).toBe(true);
+});
