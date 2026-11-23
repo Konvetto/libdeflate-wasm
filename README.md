@@ -2,43 +2,58 @@
 
 # libdeflate-wasm
 
-**[libdeflate](https://github.com/ebiggers/libdeflate) 1.26 in WebAssembly: DEFLATE, zlib and
-gzip up to level 12, byte for byte the same as the native library. 25 kB brotli, zero
-dependencies.**
+**Smaller zlib, gzip and DEFLATE than fflate, pako and zlib at level 9, in a quarter of the
+time.** [libdeflate](https://github.com/ebiggers/libdeflate) 1.26 compiled to WebAssembly, byte
+for byte the output of the native library. Level 12 lands within 0.05 percent of Zopfli in an
+18th of the time. 25 kB brotli, zero dependencies, synchronous after one `await init()`.
 
 [![npm](https://img.shields.io/npm/v/libdeflate-wasm)](https://www.npmjs.com/package/libdeflate-wasm)
 [![dependencies](https://img.shields.io/badge/dependencies-0-success)](./package.json)
 [![license](https://img.shields.io/npm/l/libdeflate-wasm)](./LICENSE)
 [![CI](https://github.com/Konvetto/libdeflate-wasm/actions/workflows/ci.yml/badge.svg)](https://github.com/Konvetto/libdeflate-wasm/actions/workflows/ci.yml)
 
-libdeflate's level 12 makes standard DEFLATE streams, decoded as usual by zlib, browsers and PDF
-readers, that are noticeably smaller than zlib's best: on the Silesia corpus, 6.4 percent smaller
-than fflate at level 9 and 4.4 percent smaller than zlib at level 9. This package is that
-compressor, compiled once to a single-threaded wasm file, with a synchronous API after one
-`await init()`. It runs in browsers, Web Workers, Node, Deno and Bun.
+Measured on the [Silesia corpus](https://sun.aei.polsl.pl/~sdeor/corpus/) (12 files, 211.9 MB),
+every file as one zlib stream, one thread, Apple M2 Pro. Full table and method in
+[Benchmark](#benchmark); per-file numbers in [bench/results.md](./bench/results.md).
+
+- **Level 6 is the fastest row in the benchmark and already smaller than the others' best**:
+  67.51 MB in 2.6 s, against fflate 9 (69.13 MB, 10.7 s), pako 9 (68.17 MB, 16.0 s) and
+  node:zlib 9 (67.64 MB, 12.8 s).
+- **Level 12 is the smallest output measured**: 64.68 MB, 6.4 percent smaller than fflate 9 and
+  4.4 percent smaller than node:zlib 9. Zopfli at 15 iterations reaches 64.71 MB and needs 727 s;
+  level 12 needs 41 s.
+- **Byte for byte the native output**: level 12 produced the same 64,681,700 bytes as native
+  libdeflate 1.26, and the tests pin every level from 1 to 12 against the native build on inputs
+  up to 50 MB.
+- **Small and self-contained**: 64 kB of wasm (30 kB gzip, 25 kB brotli) plus a 2 kB loader. No
+  Emscripten glue, no threads, no `SharedArrayBuffer`, no special headers. Runs in browsers, Web
+  Workers, Node, Deno and Bun.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Konvetto/libdeflate-wasm/main/bench/silesia-dark.svg">
+  <img src="https://raw.githubusercontent.com/Konvetto/libdeflate-wasm/main/bench/silesia-light.svg" alt="Scatter chart of compressed size against time on the Silesia corpus. libdeflate-wasm level 6: 67.51 MB in 2.6 s. Level 9: 66.72 MB in 7.1 s. Level 12: 64.68 MB in 41.2 s. fflate 9: 69.13 MB in 10.7 s. pako 9: 68.17 MB in 16.0 s. node:zlib 9: 67.64 MB in 12.8 s. CompressionStream: 68.22 MB in 5.3 s. Native libdeflate 12: 64.68 MB in 33.4 s. Zopfli 1 iteration: 65.18 MB in 389 s. Zopfli 15 iterations: 64.71 MB in 727 s." width="100%">
+</picture>
+
+Where it loses: level 12 is about 4 times slower than fflate at level 9 (41 s against 10.7 s), and
+the wasm runs at about 80 percent of the native binary's speed (41.2 s against 33.4 s). libdeflate
+works on whole buffers, capped at 1 GiB of input and 2 GiB of output per call; for streaming, use a
+streaming compressor.
+
+### Which level
+
+| You want                                                              | Level | Silesia, 211.9 MB  | Compared with level 12          |
+| --------------------------------------------------------------------- | ----: | ------------------ | ------------------------------- |
+| Fast, and still smaller than zlib level 9                             |     6 | 67.51 MB in 2.6 s  | 4.4 percent larger, 16x faster  |
+| A middle step                                                         |     9 | 66.72 MB in 7.1 s  | 3.1 percent larger, 5.8x faster |
+| The smallest file: PDF streams, assets built once, archives (default) |    12 | 64.68 MB in 41.2 s |                                 |
+| Stored, no compression                                                |     0 |                    |                                 |
+
+Levels 1 to 9 are libdeflate's counterparts of zlib's levels; 10 to 12 use its near-optimal
+parser. Decompression has no level; pass the known output `size` when you have it, it is faster.
 
 > **Try it without installing anything:** the [Compress PDF](https://konvetto.com/pdf/compress-pdf)
 > tool on Konvetto recompresses every Flate stream of your PDF with libdeflate-wasm, in your
 > browser. No upload, no account, your file never leaves the tab.
-
-## Why libdeflate-wasm
-
-- **Smaller than zlib level 9**: level 12 is libdeflate's near-optimal parser. See
-  [Benchmark](#benchmark) for the numbers on the Silesia corpus.
-- **Faster at the same size**: level 6 already beats fflate, pako and zlib at level 9 on size,
-  in a quarter of the time of fflate and a fifth of zlib's.
-- **Identical to native libdeflate**: the tests compare every level from 1 to 12 with native
-  libdeflate of the same version, byte for byte, up to 50 MB of input (CI builds the native
-  reference from `vendor/`).
-- **Deterministic**: the same input and level give the same bytes on every platform.
-- **Small**: 64 kB of wasm (30 kB gzip, 25 kB brotli) and a 2 kB loader. No Emscripten JS glue,
-  no threads, no `SharedArrayBuffer`, no special headers.
-- **Memory-safe use of wasm**: one compressor per level is allocated once and reused; buffers are
-  freed after every call; output is a plain `Uint8Array` you own.
-
-Where it loses: level 12 is about 4 times slower than fflate at level 9. The wasm build ran at
-about 80 percent of the native binary's speed in the benchmark. Input is capped at 1 GiB per call and output at 2 GiB: for
-streaming or larger data, use a streaming compressor, libdeflate works on whole buffers.
 
 ## Install
 
@@ -185,12 +200,13 @@ The wasm output at level 12 is the native output, byte for byte. Native time is 
 ```sh
 ./bench/fetch-silesia.sh   # downloads the corpus into bench/silesia (gitignored), checks SHA-256
 ZOPFLI_15=1 pnpm bench     # needs libdeflate-gzip in PATH; without ZOPFLI_15 the 15-iteration row is skipped
+pnpm bench:chart           # redraws bench/silesia-light.svg and silesia-dark.svg from bench/results.md
 ```
 
 ### Why no SIMD build
 
 libdeflate's SIMD code is hand-written for x86 and ARM (CRC-32, Adler-32, match finder
-initialisation) and is not compiled for wasm. Building with `-msimd128` (auto-vectorisation only)
+initialization) and is not compiled for wasm. Building with `-msimd128` (auto-vectorization only)
 gave the same speed within 1 percent and a 25 percent larger file, so one baseline build ships,
 and it runs on every engine with WebAssembly bulk memory (Chrome 75, Firefox 79, Safari 15,
 Node 12 and later).

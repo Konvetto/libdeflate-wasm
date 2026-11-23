@@ -1,20 +1,26 @@
 {
   "name": "libdeflate-wasm",
   "version": "0.2.0",
-  "description": "libdeflate compiled to WebAssembly: DEFLATE, zlib and gzip at levels 0 to 12, smaller than zlib level 9 and synchronous after one init. Zero dependencies, browsers, Web Workers and Node.",
+  "description": "libdeflate 1.26 in WebAssembly: zlib, gzip and raw DEFLATE at levels 0 to 12. Smaller output than fflate, pako and zlib at level 9 in a quarter of the time; level 12 matches Zopfli 18x faster. Byte-identical to native libdeflate, 25 kB, zero dependencies, sync API. Browsers, workers, Node, Deno, Bun.",
   "keywords": [
     "libdeflate",
     "deflate",
+    "inflate",
     "zlib",
     "gzip",
-    "inflate",
+    "gunzip",
+    "compress",
     "compression",
+    "decompress",
     "wasm",
     "webassembly",
-    "pdf",
-    "flate",
+    "zopfli",
     "browser",
-    "worker"
+    "web-worker",
+    "pdf",
+    "flatedecode",
+    "png",
+    "zip"
   ],
   "homepage": "https://konvetto.com/pdf/compress-pdf",
   "bugs": {
@@ -64,6 +70,7 @@
     "attw": "attw --pack . --profile esm-only --exclude-entrypoints libdeflate.wasm",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm publint && pnpm attw && pnpm size",
     "bench": "tsx bench/run.ts",
+    "bench:chart": "tsx bench/chart.ts",
     "prepublishOnly": "pnpm check"
   },
   "devDependencies": {
