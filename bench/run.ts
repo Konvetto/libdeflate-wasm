@@ -1,136 +1,101 @@
 /**
- * Recompresses every /FlateDecode stream of the given PDFs and sums the bytes and the time.
+ * Compresses every file of the Silesia corpus as one zlib stream per file and sums bytes and time.
  *
- *   pnpm bench -- a.pdf b.pdf ...
+ *   ./bench/fetch-silesia.sh   # once: downloads the corpus into bench/silesia (gitignored)
+ *   pnpm bench                 # or: pnpm bench -- <dir with the corpus files>
  *
- * PDFs are parsed with @cantoo/pdf-lib (PDF_LIB_FROM=<dir with node_modules/@cantoo/pdf-lib>, it
- * is not a dependency of this package). Streams are inflated with node:zlib, then each contender
- * makes a zlib stream of every one. Native libdeflate runs as one `libdeflate-gzip` process over
- * all streams written to a temp dir (LIBDEFLATE_GZIP=<path>), its gzip size minus 12 bytes is the
- * zlib size (10 + 8 bytes of gzip framing, 2 + 4 bytes of zlib framing).
+ * Env: LIBDEFLATE_GZIP=<path> native libdeflate-gzip (default: libdeflate-gzip from PATH),
+ * ZOPFLI_15=1 adds Zopfli at 15 iterations (default is 1; 15 takes very long on 211 MB).
+ * Native libdeflate runs as one `libdeflate-gzip` process per file; its gzip size minus 12 bytes
+ * is the zlib size (10 + 8 bytes of gzip framing, 2 + 4 bytes of zlib framing).
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { deflateSync, inflateSync } from 'node:zlib';
+import { deflateSync } from 'node:zlib';
+import { zlibAsync as zopfli } from '@gfx/zopfli';
 import { zlibSync } from 'fflate';
+import { deflate as pakoDeflate } from 'pako';
 import { init, zlib } from '../src/index.js';
 
-interface PdfLib {
-  PDFDocument: {
-    load: (
-      b: Uint8Array,
-      o: object,
-    ) => Promise<{
-      context: { enumerateIndirectObjects: () => [unknown, unknown][] };
-    }>;
-  };
-  PDFName: { of: (s: string) => unknown };
-  PDFRawStream: new (...a: never[]) => {
-    dict: { get: (k: unknown) => unknown };
-    contents: Uint8Array;
-  };
-}
-
-const files = process.argv.slice(2).filter((a) => a !== '--');
+const dir = resolve(process.argv.slice(2).find((a) => a !== '--') ?? 'bench/silesia');
+const nativeGzip = process.env.LIBDEFLATE_GZIP ?? 'libdeflate-gzip';
+const files = readdirSync(dir)
+  .filter((f) => statSync(join(dir, f)).isFile())
+  .sort();
 if (files.length === 0) {
-  console.error('usage: pnpm bench -- file.pdf [...]');
+  console.error('no files in', dir, '(run ./bench/fetch-silesia.sh)');
   process.exit(1);
 }
-const pdfLibFrom = process.env.PDF_LIB_FROM ?? '../handy-tools-2';
-const nativeGzip = process.env.LIBDEFLATE_GZIP ?? 'libdeflate-gzip';
-const require = createRequire(join(resolve(pdfLibFrom), 'package.json'));
-const { PDFDocument, PDFName, PDFRawStream } = require('@cantoo/pdf-lib') as PdfLib;
 
-async function streamsOf(file: string): Promise<{ original: number; raw: Uint8Array[] }> {
-  const doc = await PDFDocument.load(readFileSync(file), { ignoreEncryption: true });
-  let original = 0;
-  const raw: Uint8Array[] = [];
-  for (const [, o] of doc.context.enumerateIndirectObjects()) {
-    if (!(o instanceof PDFRawStream)) continue;
-    if (String(o.dict.get(PDFName.of('Filter'))) !== '/FlateDecode') continue;
-    try {
-      raw.push(new Uint8Array(inflateSync(o.contents)));
-      original += o.contents.length;
-    } catch {
-      // Broken or predictor-only streams are skipped, like the Compress PDF engine does.
-    }
-  }
-  return { original, raw };
+type Contender = [name: string, run: (d: Uint8Array) => Uint8Array | Promise<Uint8Array>];
+
+// CompressionStream('deflate') writes a zlib stream, like the browsers do (the output can differ
+// slightly by engine; this is the one built into Node).
+async function webStream(d: Uint8Array): Promise<Uint8Array> {
+  const out = new Blob([d as BlobPart]).stream().pipeThrough(new CompressionStream('deflate'));
+  return new Uint8Array(await new Response(out).arrayBuffer());
 }
 
-type Contender = [name: string, run: (d: Uint8Array) => Uint8Array];
-
+const NATIVE = 'native libdeflate 1.26, level 12';
 await init();
 const contenders: Contender[] = [
-  ['fflate 0.8.3 level 9', (d) => zlibSync(d, { level: 9 })],
-  ['node:zlib level 9', (d) => deflateSync(d, { level: 9 })],
-  ['libdeflate-wasm level 6', (d) => zlib(d, 6)],
-  ['libdeflate-wasm level 9', (d) => zlib(d, 9)],
-  ['libdeflate-wasm level 12', (d) => zlib(d, 12)],
+  ['fflate 0.8.3, level 9', (d) => zlibSync(d, { level: 9 })],
+  ['pako 3.0.3, level 9', (d) => pakoDeflate(d, { level: 9 })],
+  ['node:zlib, level 9', (d) => deflateSync(d, { level: 9 })],
+  ['CompressionStream deflate (Node)', webStream],
+  ['libdeflate-wasm, level 6', (d) => zlib(d, 6)],
+  ['libdeflate-wasm, level 9', (d) => zlib(d, 9)],
+  ['libdeflate-wasm, level 12', (d) => zlib(d, 12)],
+  [NATIVE, () => new Uint8Array()], // measured by `native` below
+  ['@gfx/zopfli 1.0.15, 1 iteration', (d) => zopfli(d, { numiterations: 1 })],
 ];
-
-function native(raw: Uint8Array[]): { bytes: number; ms: number } {
-  const dir = mkdtempSync(join(tmpdir(), 'ldw-bench-'));
-  try {
-    mkdirSync(dir, { recursive: true });
-    const paths = raw.map((d, i) => {
-      const p = join(dir, `s${i}`);
-      writeFileSync(p, d);
-      return p;
-    });
-    const t = performance.now();
-    execFileSync(nativeGzip, ['-12', '-k', '-f', ...paths]);
-    const ms = performance.now() - t;
-    const bytes = paths.reduce((sum, p) => sum + statSync(`${p}.gz`).size - 12, 0);
-    return { bytes, ms };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+if (process.env.ZOPFLI_15) {
+  contenders.push(['@gfx/zopfli 1.0.15, 15 iterations', (d) => zopfli(d, { numiterations: 15 })]);
 }
 
-const totals = new Map<string, { bytes: number; ms: number }>();
-const add = (name: string, bytes: number, ms: number): void => {
-  const t = totals.get(name) ?? { bytes: 0, ms: 0 };
-  totals.set(name, { bytes: t.bytes + bytes, ms: t.ms + ms });
-};
-const rows: string[] = [];
-let originalTotal = 0;
+function native(file: string): { bytes: number; ms: number } {
+  const t = performance.now();
+  const gz = execFileSync(nativeGzip, ['-12', '-c', file], {
+    maxBuffer: 1 << 30,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  return { bytes: gz.length - 12, ms: performance.now() - t };
+}
+
+const totals = new Map(contenders.map(([n]) => [n, { bytes: 0, ms: 0 }]));
+const perFile: string[] = [];
 let rawTotal = 0;
 
-for (const file of files) {
-  const { original, raw } = await streamsOf(file);
-  const rawBytes = raw.reduce((s, d) => s + d.length, 0);
-  originalTotal += original;
-  rawTotal += rawBytes;
+for (const f of files) {
+  const data = new Uint8Array(readFileSync(join(dir, f)));
+  rawTotal += data.length;
   const cells: string[] = [];
   for (const [name, run] of contenders) {
-    for (const d of raw.slice(0, 3)) run(d); // warm up the JIT and the cached compressor
-    let bytes = 0;
-    const t = performance.now();
-    for (const d of raw) bytes += run(d).length;
-    const ms = performance.now() - t;
-    add(name, bytes, ms);
+    let bytes: number;
+    let ms: number;
+    if (name === NATIVE) {
+      ({ bytes, ms } = native(join(dir, f)));
+    } else {
+      const t = performance.now();
+      bytes = (await run(data)).length;
+      ms = performance.now() - t;
+    }
+    const tot = totals.get(name)!;
+    tot.bytes += bytes;
+    tot.ms += ms;
     cells.push(`${name}: ${bytes} B ${ms.toFixed(0)} ms`);
   }
-  const n = native(raw);
-  add('native libdeflate 1.26 level 12', n.bytes, n.ms);
-  rows.push(
-    `${basename(file)}: ${raw.length} streams, ${original} B in the file, ${rawBytes} B raw`,
-  );
-  rows.push(`  ${cells.join(' | ')} | native 12: ${n.bytes} B ${n.ms.toFixed(0)} ms`);
+  perFile.push(`${f}: ${data.length} B\n  ${cells.join('\n  ')}`);
+  console.error(`${f} done`);
 }
 
-console.log(rows.join('\n'));
-console.log(
-  `\nAll files: ${originalTotal} B of Flate streams in the PDFs, ${rawTotal} B inflated\n`,
-);
+console.log(perFile.join('\n'));
+console.log(`\nAll files: ${files.length} files, ${rawTotal} B\n`);
 console.log('| Compressor | Bytes | vs fflate 9 | Time |');
 console.log('|---|---:|---:|---:|');
-const base = totals.get('fflate 0.8.3 level 9')!.bytes;
+const base = totals.get('fflate 0.8.3, level 9')!.bytes;
 for (const [name, { bytes, ms }] of totals) {
   const pct = ((bytes / base - 1) * 100).toFixed(2);
   console.log(`| ${name} | ${bytes} | ${pct}% | ${ms.toFixed(0)} ms |`);

@@ -9,7 +9,8 @@ you can send.
 pnpm install
 pnpm test          # Vitest (compares with native libdeflate-gzip when it is installed)
 pnpm check         # types, lint, tests, build, publint, attw, size
-pnpm bench -- a.pdf b.pdf
+./bench/fetch-silesia.sh   # once: downloads the Silesia corpus (gitignored)
+pnpm bench                 # compares with fflate, pako, node:zlib, Zopfli and native libdeflate
 ```
 
 Node 20.16 or newer and pnpm (see `packageManager` in package.json). The byte-for-byte tests use
