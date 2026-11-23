@@ -1,3 +1,5 @@
+<a href="https://konvetto.com/pdf/compress-pdf"><img src="https://raw.githubusercontent.com/Konvetto/libdeflate-wasm/main/.github/assets/social-preview.png" alt="libdeflate-wasm: smaller zlib and gzip in WebAssembly. Try it free on konvetto.com" width="100%"></a>
+
 # libdeflate-wasm
 
 **[libdeflate](https://github.com/ebiggers/libdeflate) 1.26 in WebAssembly: DEFLATE, zlib and
@@ -15,9 +17,9 @@ smaller than fflate at level 9 and 6.3 percent smaller than zlib at level 9. Thi
 compressor, compiled once to a single-threaded wasm file, with a synchronous API after one
 `await init()`. It runs in browsers, Web Workers, Node, Deno and Bun.
 
-> **Where it is used:** the [Compress PDF](https://konvetto.com/pdf/compress-pdf) tool on
-> Konvetto recompresses every Flate stream of your PDF with it, in your browser. No upload, no
-> account, your file never leaves the tab.
+> **Try it without installing anything:** the [Compress PDF](https://konvetto.com/pdf/compress-pdf)
+> tool on Konvetto recompresses every Flate stream of your PDF with libdeflate-wasm, in your
+> browser. No upload, no account, your file never leaves the tab.
 
 ## Why libdeflate-wasm
 
