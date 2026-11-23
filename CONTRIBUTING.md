@@ -40,7 +40,7 @@ adds a slow test that pushes wasm memory past 2 GiB (needs about 4 GB of RAM).
 
 ## Pull requests
 
-CI runs lint, types, tests on Node 20, 22 and 24, publint, arethetypeswrong, size-limit, the
+CI runs lint, types, tests on Node 22 and 24 (Node 20: a smoke test of the built package), publint, arethetypeswrong, size-limit, the
 vendor check and a rebuild of the wasm. Use a Conventional Commit title for the PR (it becomes the squash commit):
 do not edit CHANGELOG.md by hand, the release PR generates it.
 

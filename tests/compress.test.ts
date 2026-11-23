@@ -22,6 +22,12 @@ import {
   unzlib,
   zlib,
 } from '../src/index.js';
+
+/** Byte equality without vitest's element-by-element diff, which takes minutes on 50 MB. */
+function expectSame(actual: Uint8Array, expected: Uint8Array) {
+  expect(actual.length).toBe(expected.length);
+  expect(Buffer.compare(actual, expected)).toBe(0);
+}
 import { VENDORED_VERSION, hasNative, nativeGzip, randomBytes, realData, text } from './helpers.js';
 
 const levels = Array.from({ length: MAX_LEVEL + 1 }, (_, i) => i);
@@ -53,24 +59,24 @@ test('init is idempotent', async () => {
 
 describe.each(inputs)('%s', (_, data) => {
   test.each(levels)('round-trips through node:zlib at level %i', (level) => {
-    expect(new Uint8Array(inflateRawSync(deflate(data, level)))).toEqual(data);
-    expect(new Uint8Array(inflateSync(zlib(data, level)))).toEqual(data);
-    expect(new Uint8Array(gunzipSync(gzip(data, level)))).toEqual(data);
+    expectSame(new Uint8Array(inflateRawSync(deflate(data, level))), data);
+    expectSame(new Uint8Array(inflateSync(zlib(data, level))), data);
+    expectSame(new Uint8Array(gunzipSync(gzip(data, level))), data);
   });
 
   // The libdeflate-gzip CLI has no -0, so level 0 is checked as stored blocks below.
   test.skipIf(!hasNative).each(levels.slice(1))(
     'equals native libdeflate byte for byte at level %i',
     (level) => {
-      expect(gzip(data, level)).toEqual(nativeGzip(data, level));
+      expectSame(gzip(data, level), nativeGzip(data, level));
     },
   );
 
   test('decompresses node:zlib output', () => {
-    expect(inflate(new Uint8Array(deflateRawSync(data)))).toEqual(data);
-    expect(unzlib(new Uint8Array(deflateSync(data)))).toEqual(data);
-    expect(gunzip(new Uint8Array(gzipSync(data)))).toEqual(data);
-    expect(unzlib(new Uint8Array(deflateSync(data)), data.length)).toEqual(data);
+    expectSame(inflate(new Uint8Array(deflateRawSync(data))), data);
+    expectSame(unzlib(new Uint8Array(deflateSync(data))), data);
+    expectSame(gunzip(new Uint8Array(gzipSync(data))), data);
+    expectSame(unzlib(new Uint8Array(deflateSync(data)), data.length), data);
   });
 });
 
@@ -134,7 +140,7 @@ test('decompression grows the buffer when the output is much larger than the inp
 
 test('gunzip uses the size in the gzip trailer', () => {
   const data = text(3_000_000);
-  expect(gunzip(gzip(data, 6))).toEqual(data);
+  expectSame(gunzip(gzip(data, 6)), data);
 });
 
 test('decompression errors', () => {
@@ -155,7 +161,7 @@ test('release frees the cached state and later calls allocate it again', () => {
   release();
   release();
   expect(zlib(data, 12)).toEqual(before);
-  expect(unzlib(before)).toEqual(data);
+  expectSame(unzlib(before), data);
 });
 
 test('compresses 50 MB without trouble', () => {
@@ -165,8 +171,8 @@ test('compresses 50 MB without trouble', () => {
   for (const level of [6, 12]) {
     const z = zlib(data, level);
     expect(z.length).toBeLessThan(data.length * 0.25);
-    expect(new Uint8Array(inflateSync(z))).toEqual(data);
-    expect(unzlib(z, data.length)).toEqual(data);
+    expectSame(new Uint8Array(inflateSync(z)), data);
+    expectSame(unzlib(z, data.length), data);
   }
 });
 
@@ -174,7 +180,7 @@ test.skipIf(!hasNative)('50 MB at level 12 equals native libdeflate byte for byt
   const data = new Uint8Array(50 * 1024 * 1024);
   const chunk = text(1 << 20);
   for (let i = 0; i < 50; i++) data.set(i % 5 === 4 ? randomBytes(1 << 20, i + 1) : chunk, i << 20);
-  expect(gzip(data, 12)).toEqual(nativeGzip(data, 12));
+  expectSame(gzip(data, 12), nativeGzip(data, 12));
 });
 
 test('decompressors stop after the first stream and ignore trailing bytes', () => {

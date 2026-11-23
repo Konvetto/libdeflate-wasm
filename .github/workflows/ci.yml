@@ -47,8 +47,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build the native reference compressor from vendor/ (byte-for-byte tests)
+        if: matrix.node != 20
         run: ./scripts/build-native-gzip.sh
+      # vitest 5 needs Node 22; on Node 20 the job checks the built package only (smoke test below).
       - run: pnpm test:coverage
+        if: matrix.node != 20
       - name: Smoke-test the built package in plain Node
         run: |
           pnpm build
