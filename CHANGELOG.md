@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.0](https://github.com/Konvetto/libdeflate-wasm/compare/v0.2.0...v1.0.0) (2026-11-23)
+
+
+### Miscellaneous Chores
+
+* release 1.0.0 ([28b9665](https://github.com/Konvetto/libdeflate-wasm/commit/28b9665ae2cd5894b264885b97e133fd63a7c660))
+
 ## [0.2.0](https://github.com/Konvetto/libdeflate-wasm/compare/v0.1.0...v0.2.0) (2026-11-23)
 
 
