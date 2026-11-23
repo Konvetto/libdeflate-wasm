@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0](https://github.com/Konvetto/libdeflate-wasm/compare/v0.1.0...v0.2.0) (2026-11-23)
+
+
+### Features
+
+* libdeflate 1.26 compiled to WebAssembly with deflate, zlib and gzip up to level 12 ([f17d716](https://github.com/Konvetto/libdeflate-wasm/commit/f17d716a1df3f975f753b5749b8993616e35d591))
+
+
+### Bug Fixes
+
+* bound size hints, share one instance between init and initSync, unsigned pointers ([a48fe05](https://github.com/Konvetto/libdeflate-wasm/commit/a48fe0575ee8fc319163c7cea506f4c730a79e25))
+
 ## [0.1.0]
 
 First release, made for the Compress PDF engine of konvetto.com.

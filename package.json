@@ -1,6 +1,6 @@
 {
   "name": "libdeflate-wasm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "libdeflate compiled to WebAssembly: DEFLATE, zlib and gzip at levels 0 to 12, smaller than zlib level 9 and synchronous after one init. Zero dependencies, browsers, Web Workers and Node.",
   "keywords": [
     "libdeflate",
