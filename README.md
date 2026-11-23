@@ -11,8 +11,8 @@ dependencies.**
 [![license](https://img.shields.io/npm/l/libdeflate-wasm)](./LICENSE)
 [![CI](https://github.com/Konvetto/libdeflate-wasm/actions/workflows/ci.yml/badge.svg)](https://github.com/Konvetto/libdeflate-wasm/actions/workflows/ci.yml)
 
-libdeflate's level 12 makes DEFLATE streams that any zlib, browser or PDF reader opens, and that
-are noticeably smaller than zlib's best: on the Flate streams of four real PDFs, 9.0 percent
+libdeflate's level 12 makes standard DEFLATE streams, decoded as usual by zlib, browsers and PDF
+readers, that are noticeably smaller than zlib's best: on the Flate streams of four real PDFs, 9.0 percent
 smaller than fflate at level 9 and 6.3 percent smaller than zlib at level 9. This package is that
 compressor, compiled once to a single-threaded wasm file, with a synchronous API after one
 `await init()`. It runs in browsers, Web Workers, Node, Deno and Bun.
