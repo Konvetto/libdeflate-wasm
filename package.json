@@ -1,6 +1,6 @@
 {
   "name": "libdeflate-wasm",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "libdeflate 1.26 in WebAssembly: zlib, gzip and raw DEFLATE at levels 0 to 12. Smaller output than fflate, pako and zlib at level 9 in a quarter of the time; level 12 matches Zopfli 18x faster. Byte-identical to native libdeflate, 25 kB, zero dependencies, sync API. Browsers, workers, Node, Deno, Bun.",
   "keywords": [
     "libdeflate",
