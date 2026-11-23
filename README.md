@@ -41,12 +41,16 @@ streaming compressor.
 
 ### Which level
 
-| You want                                                              | Level | Silesia, 211.9 MB  | Compared with level 12          |
-| --------------------------------------------------------------------- | ----: | ------------------ | ------------------------------- |
-| Fast, and still smaller than zlib level 9                             |     6 | 67.51 MB in 2.6 s  | 4.4 percent larger, 16x faster  |
-| A middle step                                                         |     9 | 66.72 MB in 7.1 s  | 3.1 percent larger, 5.8x faster |
-| The smallest file: PDF streams, assets built once, archives (default) |    12 | 64.68 MB in 41.2 s |                                 |
-| Stored, no compression                                                |     0 |                    |                                 |
+Silesia corpus, 211.9 MB, one thread:
+
+| Level            |     Size |   Time | Use it for                                     |
+| ---------------- | -------: | -----: | ---------------------------------------------- |
+| **12** (default) | 64.68 MB | 41.2 s | PDF streams, assets built once, archives       |
+| **9**            | 66.72 MB |  7.1 s | a middle step: +3.1% size, 5.8x faster than 12 |
+| **6**            | 67.51 MB |  2.6 s | on the fly: +4.4% size, 16x faster than 12     |
+
+Even level 6 is smaller than zlib's level 9 (node:zlib 9: 67.64 MB in 12.8 s). Level 0 stores the
+data without compression.
 
 Levels 1 to 9 are libdeflate's counterparts of zlib's levels; 10 to 12 use its near-optimal
 parser. Decompression has no level; pass the known output `size` when you have it, it is faster.
